@@ -1,0 +1,44 @@
+import discord
+from discord.ext import tasks, commands
+import asyncio
+
+
+BOT_TOKEN = 'MTQzNjE4MzYwMjUyOTMwNDcxNw.G46iO2.-BqllSUiBaz34As_FE5HV3q1nEpZm1iSp0T8EY'
+DASHBOARD_CHANNEL_ID = 1436189217544998982 
+
+intents = discord.Intents.default()
+intents.guilds = True
+intents.members = True  # Required to get member counts
+intents.presences = False
+
+bot = commands.Bot(command_prefix='!', intents=intents)
+
+@bot.event
+async def on_ready():
+    print(f'Logged in as {bot.user.name}')
+    send_stats.start()
+
+@tasks.loop(minutes=10)
+async def send_stats():
+    channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
+    if not channel:
+        print("Dashboard channel not found.")
+        return
+
+    message = "**📊 Server Stats Update**\n\n"
+    for guild in bot.guilds:
+        member_count = guild.member_count
+        message += f"🌐 **{guild.name}**\n👥 Members: {member_count}\n\n"
+
+    await channel.send(message)
+
+# Optional command to trigger stats manually
+@bot.command()
+async def stats(ctx):
+    message = "**📊 Server Stats Update**\n\n"
+    for guild in bot.guilds:
+        member_count = guild.member_count
+        message += f"🌐 **{guild.name}**\n👥 Members: {member_count}\n\n"
+    await ctx.send(message)
+
+bot.run(MTQzNjE4MzYwMjUyOTMwNDcxNw.G46iO2.-BqllSUiBaz34As_FE5HV3q1nEpZm1iSp0T8EY)
