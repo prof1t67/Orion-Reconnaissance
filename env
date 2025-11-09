@@ -1,0 +1,4 @@
+BOT_TOKEN=your bot token here
+DASHBOARD_CHANNEL_ID=channel id(s) for server stat updates
+FEED_CHANNEL_ID=feed channel id(s) for message logs
+OWNER_ID=your discord id here
